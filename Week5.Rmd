@@ -1,0 +1,191 @@
+---
+title: "Week 4 Rundown"
+author: "James Rundle, Bradley Odac, Avi"
+date: "9/17/2017"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+## Month End Balance Sheet
+library(readxl)
+month_end_balances <- read_excel("~/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Month end balances ", col_types = c("numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric"))
+
+month_end_balances$mortgage_flag = factor(month_end_balances$mortgage_flag )
+
+daily_interactions_WF <- read_excel("~/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Daily interactions with WF")
+
+daily_interactions_WF$Des1 = factor(daily_interactions_WF$Des1)
+levels(daily_interactions_WF$Des1)
+
+
+```
+
+
+```{r include=FALSE}
+library(readxl)
+
+WF_CardData <- read_excel("~/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Daily use of a WF credit card ")
+
+
+Cust12 <- data.frame(WF_CardData[WF_CardData$masked_id == 12,])
+Cust1 <- data.frame(WF_CardData[WF_CardData$masked_id == 1,])
+
+Cust12_Des1 <- factor(Cust12$Des1)
+Cust12_Des2 <- factor(Cust12$Des2)
+Cust12_Des3 <- factor(Cust12$Des3)
+
+summary(factor(WF_CardData$Des2))
+
+Popset <- (subset(WF_CardData, subset = Des2 == "OTHER")$Des3)
+
+CardData <- read_excel("~/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Daily use of a WF credit card ")
+CardData['MiniDes2'] <- 0
+
+```
+
+```{r}
+##Hope this works to salvage Data
+#CardData <- WF_CardData2
+bills <- list("INSURANCE / FINANCIAL SERVICES","TAX","UTILITIES / TELECOM")
+entertainment <- list("ENTERTAINMENT","RESTAURANTS")
+personal<- list("PET / VETERINARY","PERSONAL SERVICES","EDUCATION","HEALTHCARE / PHARMACY","LODGING")
+transport<- list("AIRLINES / TRANSPORTATION","AUTO / GAS")
+work<- list("BUILDING SUPPLY / WHOLESALE","OFFICE SUPPLY / STATIONERY","HOUSEHOLD","CONTRACTOR / BUSINESS SERVICES","POSTAGE / DELIVERY")
+common<- list("GROCERIES","RETAIL / DEPARTMENT STORES")
+charity <- list("CHARITY / COMMUNITY ORG.")
+other <- list("OTHER", NA)
+
+
+TrimmedDesList <- list("BILLS"= bills,"ENTERTAINMENT"=entertainment,"PERSONAL CARE"=personal,"TRANSPORTATION"=transport,"WORK RELATED"=work,"COMMON PURCHASES"=common,"CHARITY"=charity,"OTHER"=other)
+
+```
+
+
+
+
+
+
+
+
+```{r include=FALSE}
+
+PstatsID12 <- list(Stats = summary(Cust12$Payment), Outliers = boxplot(Cust12$Payment)$out)
+PstatsID1 <- list(Stats = summary(Cust1$Payment), Outliers = boxplot(Cust1$Payment)$out)
+### arranging data by cust id
+##50 different masked ID
+```
+
+
+
+
+
+
+
+
+
+
+### Condensing Des2 Catagories down to 7
+Running randomForests last week I felt like there were too many catagories to accurately use.
+Des 2 had the least descriptors coming in at 28. I felt it was a good middle ground to classify each "purchase" to a condensed list of 7 catacories.
+After wasting way too much time trying to use for loops to propagate a new column I just bruteforced it using nested lists of the 28 descriptors in the Des2 column
+
+```{r}
+CardData$MiniDes2[CardData$Des2 %in% TrimmedDesList$BILLS] <- "BILLS"
+CardData$MiniDes2[CardData$Des2 %in% TrimmedDesList$ENTERTAINMENT] <- "ENTERTAINMENT"
+CardData$MiniDes2[CardData$Des2 %in% TrimmedDesList$`PERSONAL CARE`] <- "PERSONAL CARE"
+CardData$MiniDes2[CardData$Des2 %in% TrimmedDesList$TRANSPORTATION] <- "TRANSPORTATION" 
+CardData$MiniDes2[CardData$Des2 %in% TrimmedDesList$`WORK RELATED`] <- "WORK RELATED" 
+CardData$MiniDes2[CardData$Des2 %in% TrimmedDesList$`COMMON PURCHASES`] <- "COMMON PURCHASES"
+CardData$MiniDes2[CardData$Des2 %in% TrimmedDesList$CHARITY] <- "CHARITY" 
+CardData$MiniDes2[CardData$Des2 == "OTHER" ] <- "OTHER" 
+CardData$MiniDes2[ is.na(CardData$Des2)] <- "OTHER" 
+
+```
+## Using the new MiniDes2 column to run randomForests
+
+Well...It's different. I think Im going in the right direction but need some work. Right now the catagorical Random forest appears to only predict "COMMON PURCHASES". Thats not super great.
+
+The regression forest is telling me 
+*"The response has five or fewer unique values.  Are you sure you want to do regression?"*
+Still coming up with no culprits after some intense googling.
+
+```{r}
+MergedWMini <- merge.data.frame(month_end_balances,CardData,by="masked_id", all.x = TRUE )
+
+MergedWMini$MiniDes2 = as.factor(MergedWMini$MiniDes2)
+
+library(randomForest)
+CatPredict <- randomForest(as.factor(MiniDes2) ~  checking_acct_ct + online_bank_cnt + direct_phone_cnt + atm_withdrawls_cnt +  age  + mobile_bank_cnt + check_bal_altered + sav_bal_altered,
+                      data=MergedWMini, mtry = 3 ,localImp = TRUE,
+                      importance=TRUE,na.action = na.omit, 
+                      ntree=2000)
+print(CatPredict)
+varImpPlot(CatPredict)
+
+
+
+
+PayRegr <- randomForest((Payment > 1000) ~ MiniDes2 + check_bal_altered + sav_bal_altered +atm_withdrawls_cnt +  age,
+                      data=MergedWMini, mtry = 2 ,localImp = TRUE,
+                      importance=TRUE,na.action = na.omit, 
+                      ntree=2000)
+print(PayRegr)
+varImpPlot(PayRegr)
+
+```
+
+### trying to make mindes2 applicable for regression
+HALP
+```{r}
+OrdMiniDes <- MergedWMini$MiniDes2
+OrdMiniDes <- as.numeric(OrdMiniDes)-7
+```
+# Purchase Statistics
+Here created dataframe collecting data on each of the 50 masked ids. The top two "purchase types" for each customer.
+
+As we can see some accounts do not have credit cards, but most are "Common purchases" and "Entertainment"/ "Transportation". I think this is a good start but the classifying needs to be tweaked to supply some really valuable/workable information. Suggestions?
+
+Each masked id also contains the descriptive statistics for the Payments(charges) on their creditcard. I would like to find out a percentage of purchases made within each  range. If most of their purchases are high dollar, they need to be marketed towards differently than someone who a majority of their purchases are <50 from grocery stores or something.
+```{r}
+### Fill dataframe with #1 des, #2 des, descriptive stats,
+
+CardStats <- as.data.frame(matrix(ncol = 9, nrow = 50))
+colnames(CardStats) <- c('masked_id',"1stDes",'2ndDes','MinofCharge','Q1ofCharge','MedofCharge','Q3ofCharge','MaxofCharge','MeanofCharge')
+
+for(i in 1:50){
+    Top2 <- summary(as.factor(MergedWMini[MergedWMini$masked_id == i,"MiniDes2"]))
+    Top2 <- sort(Top2, decreasing = TRUE)
+    CardStats$masked_id[i] <- i
+    CardStats$'1stDes'[i] <- names(Top2[1])
+    CardStats$'2ndDes'[i] <- names(Top2[2])
+    CardStats$MinofCharge[i]<- summary((MergedWMini[MergedWMini$masked_id == i,"Payment"]))['Min.']
+    CardStats$Q1ofCharge[i]<-summary((MergedWMini[MergedWMini$masked_id == i,"Payment"]))['1st Qu.']
+    CardStats$MedofCharge[i]<-summary((MergedWMini[MergedWMini$masked_id == i,"Payment"]))['Median']
+    CardStats$Q3ofCharge[i]<-summary((MergedWMini[MergedWMini$masked_id == i,"Payment"]))['3rd Qu.']
+    CardStats$MaxofCharge[i]<-summary((MergedWMini[MergedWMini$masked_id == i,"Payment"]))['Max.']
+    CardStats$MeanofCharge[i]<-summary((MergedWMini[MergedWMini$masked_id == i,"Payment"]))['Mean']
+
+}
+
+print(head(CardStats,10))
+
+```

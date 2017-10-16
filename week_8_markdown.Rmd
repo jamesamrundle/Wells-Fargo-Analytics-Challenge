@@ -1,0 +1,82 @@
+---
+title: "Week8"
+author: "James Rundle, Brad Odac, Avi"
+date: "10/8/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+library(readxl)
+
+Fake_Data_and_Metadata_Final_no_pass <- read_excel("/usr/local/Learn2Mine-Main/galaxy-dist/lesson_datasets/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+                                                   sheet = "Daily use of a WF credit card ")
+
+```
+
+##Upload Data
+I used Des 2 Catagory and am looking for information on Groceries
+```{r }
+library(reshape)
+reshaped_df = cast(Fake_Data_and_Metadata_Final_no_pass, masked_id ~ Des2,
+                   value = 'Payment', fun.aggregate=sum)
+# when we do this it is a good idea to fix the names of the columns
+tidy.name.vector <- make.names(colnames(reshaped_df), unique=TRUE)
+colnames(reshaped_df) = tidy.name.vector
+```
+
+
+```{r include=FALSE}
+reshaped_df[is.na(reshaped_df)] = 0
+```
+
+
+
+
+```{r include=FALSE}
+rownames(reshaped_df) = reshaped_df$masked_id
+reshaped_df = reshaped_df[,-1] # Remove the first column
+
+reshaped_df_norm = t(apply(reshaped_df, 1, function(x) x/sum(x))) # divide every row by the sum of that row
+# this returns a matrix without column names, so we need to add them back and change back to a data frame
+colnames(reshaped_df_norm) = colnames(reshaped_df)
+rownames(reshaped_df_norm) = rownames(reshaped_df)
+reshaped_df_norm = as.data.frame(reshaped_df_norm)
+```
+
+## Looking for information on how to predict charges of "GROCERIES" in Des2 Catagory
+We see that for GROCERIES, Retail, Insurance, other and entertainment had the highest positive correlation
+
+```{r}
+library(corrplot)
+M = cor(reshaped_df_norm)
+corrplot(M,tl.cex = .5)
+```
+
+
+## Now we can do some predictions
+I found the biggest contributors to a high %varexplained was EDUCATION and INSURANCE. If we look again we can see that education was actually negatively correlated, but i guess that is also useful for the prediction
+```{r }
+library(randomForest)
+fit <- randomForest(GROCERIES ~ ENTERTAINMENT+INSURANCE...FINANCIAL.SERVICES
+                    +RETAIL...DEPARTMENT.STORES+OTHER+EDUCATION ,
+                    data=reshaped_df_norm, 
+                    importance=TRUE, 
+                    ntree=2500)
+print(fit)
+
+```
+
+
+
+
+#78 % is pretty darn good.
+Competetion is wrapping up this week and while im not anywhere close to where I think we could be I'm hoping to package this as "We can see that if a person is making increasing purchases in these catagories they might be spending more on groceries soon" 
+
+Id really like to be able to tie this in to our idea of gamifying the rewards system, maybe including some of the descriptive statistics for individual masked ids we can provide some info that Wells Fargo will find some value in.

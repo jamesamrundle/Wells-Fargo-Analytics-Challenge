@@ -1,0 +1,226 @@
+---
+title: "Wells Fargo Analytics"
+author: "James Rundle"
+date: "10/11/2017"
+output: html_document
+---
+
+
+```{r}
+library(reshape)
+
+library(readxl)
+month_end_balances <- as.data.frame(read_excel("/usr/local/Learn2Mine-Main/galaxy-dist/lesson_datasets/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Month end balances ", col_types = c("numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric")))
+
+month_end_balances$mortgage_flag = factor(month_end_balances$mortgage_flag )
+
+daily_interactions_WF <- as.data.frame(read_excel("/usr/local/Learn2Mine-Main/galaxy-dist/lesson_datasets/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Daily interactions with WF"))
+```
+
+## Card Data Data Frame
+
+The data that our concept is concerned with is all contained within the sheet ""Daily use of a WF credit card "
+
+
+```{r}
+cardData <- as.data.frame(read_excel("/usr/local/Learn2Mine-Main/galaxy-dist/lesson_datasets/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Daily use of a WF credit card "))
+cardData <- cardData
+```
+
+
+Now the data just like this is pretty usefull! We can get alot of cool information from it.
+
+We can notice that each masked id is a different customer.
+
+With the data as we can get some descriptive statistics for each customer and we can get some cool information about how they spend the bigger part of their money.
+
+```{r}
+#Merge cardData with account balances. Also add rows for any ids with no card data entries
+MergedWBal <- merge.data.frame(month_end_balances,cardData,by="masked_id", all.x = TRUE )
+
+### Fill dataframe with #1 des, #2 des, descriptive stats,
+cardStats <- as.data.frame(matrix(ncol = 9, nrow = 50))
+colnames(cardStats) <- c('masked_id',"1stDes",'2ndDes','MinofCharge','Q1ofCharge','MedofCharge','Q3ofCharge','MaxofCharge','MeanofCharge')
+
+for(i in 1:50){
+    print(i)
+    Top2 <- summary(as.factor(MergedWBal[MergedWBal$masked_id == i,"Des2"]))
+    Top2 <- sort(Top2, decreasing =TRUE, `is.na<-.default`('None'))
+    cardStats$masked_id[i] <- i
+    cardStats$'1stDes'[i] <- names(Top2[1])
+    cardStats$'2ndDes'[i] <- names(Top2[2])
+    cardStats$MinofCharge[i]<- summary((MergedWBal[MergedWBal$masked_id == i,"Payment"]))['Min.']
+    cardStats$Q1ofCharge[i]<-summary((MergedWBal[MergedWBal$masked_id == i,"Payment"]))['1st Qu.']
+    cardStats$MedofCharge[i]<-summary((MergedWBal[MergedWBal$masked_id == i,"Payment"]))['Median']
+    cardStats$Q3ofCharge[i]<-summary((MergedWBal[MergedWBal$masked_id == i,"Payment"]))['3rd Qu.']
+    cardStats$MaxofCharge[i]<-summary((MergedWBal[MergedWBal$masked_id == i,"Payment"]))['Max.']
+    cardStats$MeanofCharge[i]<-summary((MergedWBal[MergedWBal$masked_id == i,"Payment"]))['Mean']
+
+}
+
+print(head(cardStats,10))
+
+```
+
+
+
+This stuff is great, but its gathered in a very straight forward, computer science approach, and it isnt making any predictions.
+
+So lets change the data a bit. Lets look at each Masked Id and see how they spent their money based on the 21 descriptive catagories in the original "Descriptor 2 Column"
+## We want to see the relation in multiple ways and created dataframes looking at the purchases made by each customer by:
+
+-Count of purchases made in each catagory
+-Sum of purchases made in each catagory
+-Percent of total spending made in each catagory
+
+```{r}
+##make DF with count of each cat purchased
+
+des2_count_df = cast(MergedWBal, masked_id ~ Des2, value = 'Payment')
+# when we do this it is a good idea to fix the names of the columns
+tidy.name.vector <- make.names(colnames(des2_count_df), unique=TRUE)
+colnames(des2_count_df) = tidy.name.vector
+```
+
+```{r}
+##make DF with sum of each cat purchased
+des2_sum_df = cast(MergedWBal, masked_id ~ Des2, value = 'Payment', fun.aggregate = sum)
+# when we do this it is a good idea to fix the names of the columns
+tidy.name.vector <- make.names(colnames(des2_sum_df), unique=TRUE)
+colnames(des2_sum_df) = tidy.name.vector
+
+## add sum_ to each column name
+colnames(des2_sum_df) <- paste("sum", colnames(des2_sum_df), sep = "_")
+#rename masked id to merge
+colnames(des2_sum_df)[colnames(des2_sum_df)=="sum_masked_id"] <- "masked_id"
+```
+
+
+```{r} 
+#just like previous code but data is percentage instead of sum
+
+
+des2_perc_df <- des2_sum_df
+
+#rownames(des2_perc_df) <- des2_perc_df$masked_id
+#des2_perc_df = des2_perc_df[,-1] # Remove the first column
+
+
+des2_perc_df[-1] = t(apply(des2_perc_df[-1],1, function(x) x/sum(x))) # divide every row by the sum of that row
+
+##put in masked id
+colnames(des2_perc_df) = colnames(des2_count_df)
+
+
+
+## add perc_ to each column name
+colnames(des2_perc_df) <- paste("perc", colnames(des2_perc_df), sep = "_")
+#rename masked id to merge
+colnames(des2_perc_df)[colnames(des2_perc_df)=="perc_masked_id"] <- "masked_id"
+des2_perc_df = as.data.frame(des2_perc_df)
+```
+
+```{r}
+##merge count and sum lists
+merged_data <- merge(des2_count_df,des2_sum_df,by="masked_id")
+merged_data_percs <- merge(des2_count_df,des2_perc_df,by="masked_id")
+
+print(colnames(merged_data))
+```
+
+Now initially we wanted to see what kind of correlations were in the data
+
+
+
+
+```{r}
+#vectors with sums and counts
+counts <- as.factor(c(colnames(des2_count_df[-1])))
+sums <- (c(colnames(des2_count_df[-1])))
+sums[] <- paste("sum",sums, sep = "_")
+sums<- as.factor(sums)
+percs<- c(colnames(des2_count_df[-1]))
+percs[] <-  paste("perc",percs, sep = "_")
+percs<- as.factor(percs)
+```
+
+Correlation plots
+
+
+```{r}
+library(corrplot)
+#correlations
+sumcor <- cor(merged_data[sums])
+countcor <- cor(merged_data[counts])
+compare <- cor(merged_data[counts],merged_data[sums])
+comparePercs <- cor(merged_data_percs[counts],merged_data_percs[percs])
+perccor <- cor(merged_data_percs[percs])
+
+corrplot(comparePercs,tl.cex=.6)
+corrplot(perccor,tl.cex=.6)
+corrplot(countcor, tl.cex=.6)
+```
+
+
+After studying the different correlation plots we can come up with some good ideas for how to make some predictions.
+Retail perchases is one things people most often use their credit cards for.
+
+Lets try to predict how many purchases a person will make with their credit card.
+
+```{r}
+
+library(randomForest)
+fit <- randomForest(RETAIL...DEPARTMENT.STORES ~ HOUSEHOLD + perc_AIRLINES...TRANSPORTATION 
+                   +perc_RESTAURANTS  + BUILDING.SUPPLY...WHOLESALE+perc_PET...VETERINARY  ,
+                    data=merged_data_percs, 
+                    importance=T, 
+                    ntree=3000)
+print(fit)
+varImpPlot(fit)
+
+
+```
+
+Another interesting thing we noticed was how strongly education spending was with other catagories.
+
+Lets take a close look at the education catagory.
+
+```{r}
+###total number of purchases
+print(length(MergedWBal))
+### total education purchases
+summary(MergedWBal$Des2 == 'EDUCATION')
+##avg charge of EDUCATION
+edsum <- sum(subset(MergedWBal, subset = Des2 == "EDUCATION")$Payment)
+edavg <- edsum / 68
+##avg count of  purchases of education per customer
+print(mean(des2_count_df$EDUCATION))
+```
+We see the average charges made to Education is only around 3. Pretty small drop in the bucket compared to the total. But look at the average spent in Education is nearly 5000. Thats a pretty significant amount.
+
+lets try and predict how many charges a customer will make to education.
+```{r}
+library(randomForest)
+fit <- randomForest(EDUCATION ~  +perc_RETAIL...DEPARTMENT.STORES 
+                   +perc_ENTERTAINMENT +perc_AUTO...GAS+ +perc_GROCERIES+perc_OTHER+perc_AIRLINES...TRANSPORTATION,
+                    data=merged_data_percs, 
+                    importance=TRUE, 
+                    ntree=2500)
+print(fit)
+varImpPlot(fit)
+
+
+```
+
+Typically around 50 percent. Thats pretty great!

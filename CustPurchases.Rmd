@@ -1,0 +1,131 @@
+---
+title: "Week 4 Rundown"
+author: "James Rundle, Bradley Odac, Avi"
+date: "9/17/2017"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+## Month End Balance Sheet
+library(readxl)
+month_end_balances <- read_excel("~/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Month end balances ", col_types = c("numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric"))
+
+month_end_balances$mortgage_flag = factor(month_end_balances$mortgage_flag )
+
+daily_interactions_WF <- read_excel("~/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Daily interactions with WF")
+
+daily_interactions_WF$Des1 = factor(daily_interactions_WF$Des1)
+levels(daily_interactions_WF$Des1)
+
+
+levels(month_end_balances$mortgage_flag)
+mean(month_end_balances$age)
+summary(month_end_balances)
+```
+
+
+```{r include=FALSE}
+library(readxl)
+
+WF_CardData <- read_excel("~/Fake+Data+and+Metadata+-+Final+no+pass.xlsx", 
+    sheet = "Daily use of a WF credit card ")
+
+Cust12 <- data.frame(WF_CardData[WF_CardData$masked_id == 12,])
+Cust1 <- data.frame(WF_CardData[WF_CardData$masked_id == 1,])
+
+Cust12_Des1 <- factor(Cust12$Des1)
+Cust12_Des2 <- factor(Cust12$Des2)
+Cust12_Des3 <- factor(Cust12$Des3)
+
+
+
+```
+
+
+
+
+# Types of Purchases for Masked Id
+Sorted the purchases made with credit cards by descriptor 2.
+We find Retail and Entertainment are top purchases
+
+```{r}
+Top_Cat2<- (head(sort(summary(Cust12_Des2),decreasing = TRUE))[1:3])
+print(Top_Cat2)
+
+```
+
+# Most descriptive purchases from sorted descriptor 2
+Used the top categories, Entertainment and Retail, to show every purchase
+Maybe some regex to find similar qualites
+
+```{r}
+Entertainment_Cat <- print(subset(Cust12, subset = Des2 == "ENTERTAINMENT")$Des3)
+
+Retail_Cat <- print(subset(Cust12, subset = Des2 == "RETAIL / DEPARTMENT STORES")$Des3)
+```
+
+
+# Purchase Statistics
+Here are some descriptive statistics for the customers with Masked ID 1 and 12
+
+We can use this data to see in which quartile a majority of their purchases lie and classify them as a "spending type"
+
+```{r include=FALSE}
+
+PstatsID12 <- list(Stats = summary(Cust12$Payment), Outliers = boxplot(Cust12$Payment)$out)
+PstatsID1 <- list(Stats = summary(Cust1$Payment), Outliers = boxplot(Cust1$Payment)$out)
+### arranging data by cust id
+```
+
+```{r}
+BigList <- list(PstatsID1, PstatsID12)
+## Had Trouble figuring out how to  append to big list
+print(BigList)
+```
+
+######
+# Using data to predict
+
+Here I am using the data from checking Balance, Savings Balance, ATM withdrawls, and Age to predict
+if the person will make purchases about 1000 dollars.
+
+Now Im not really sure if this is what the function is displaying but we're getting something out of it...
+
+
+```{r}
+merged_data <- merge(month_end_balances,WF_CardData,by="masked_id")
+library(randomForest)
+fit <- randomForest(as.factor(Payment> 1000) ~ check_bal_altered +
+                      sav_bal_altered + atm_withdrawls_cnt + age,
+                      data= merged_data, 
+                      importance=TRUE, 
+                      ntree=2000)
+print(fit)
+
+```
+
+# Variable importance Plot
+Almost all values do not seem to affect accuracy but savings balance, check balance, and age all seem to  decrese the GINI sharply. If i interpret GINI correctly that means that these variables have much more relevance to the event of a Payment being greater than 1000.
+
+
+```{r}
+varImpPlot(fit)
+
+```
